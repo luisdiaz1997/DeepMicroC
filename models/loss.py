@@ -2,6 +2,44 @@ import torch
 import torch.nn as nn
 from torchvision.models.vgg import vgg16
 
+dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+
+def bce_loss(input, target):
+    """
+    Numerically stable version of the binary cross-entropy loss function in PyTorch.
+
+    Inputs:
+    - input: PyTorch Tensor of shape (N, ) giving scores.
+    - target: PyTorch Tensor of shape (N,) containing 0 and 1 giving targets.
+
+    Returns:
+    - A PyTorch Tensor containing the mean BCE loss over the minibatch of input data.
+    """
+    bce = nn.BCEWithLogitsLoss()
+    return bce(input.squeeze(), target)
+
+def discriminator_loss(logits_real, logits_fake):
+    """
+    Computes the discriminator loss described above.
+
+    Inputs:
+    - logits_real: PyTorch Tensor of shape (N,) giving scores for the real data.
+    - logits_fake: PyTorch Tensor of shape (N,) giving scores for the fake data.
+
+    Returns:
+    - loss: PyTorch Tensor containing (scalar) the loss for the discriminator.
+    """
+    loss = None
+    # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    target_fake = torch.zeros(logits_fake.shape).type(dtype)
+    target_real = torch.ones(logits_real.shape).type(dtype)
+    loss = bce_loss(logits_real, target_real.squeeze()) + bce_loss(logits_fake, target_fake.squeeze())
+
+    # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    return loss
+  
+
 class GeneratorLoss(nn.Module):
     def __init__(self):
         super(GeneratorLoss, self).__init__()
@@ -13,17 +51,21 @@ class GeneratorLoss(nn.Module):
         self.mse_loss = nn.MSELoss()
         self.tv_loss = TVLoss()
 
-    def forward(self, out_labels, out_images, target_images):
+    def forward(self, logits_fake, out_images, target_images):
         # Adversarial Loss
-        adversarial_loss = 1 - out_labels
+        target_fake = torch.ones(logits_fake.shape).type(dtype)
+        adversarial_loss = bce_loss(logits_fake, target_fake.squeeze())
         # Perception Loss
         out_feat = self.loss_network(out_images.repeat([1,3,1,1]))
         target_feat = self.loss_network(target_images.repeat([1,3,1,1]))
-        perception_loss = self.mse_loss(out_feat.reshape(out_feat.size(0),-1), target_feat.reshape(target_feat.size(0),-1))
+        perception_loss = self.mse_loss(out_feat.view(out_feat.size(0),-1), target_feat.view(target_feat.size(0),-1))
         # Image Loss
         image_loss = self.mse_loss(out_images, target_images)
+        # TV loss
         tv_loss = self.tv_loss(out_images)
+
         return image_loss + 0.001 * adversarial_loss + 0.006 * perception_loss + 2e-8 * tv_loss
+        #return adversarial_loss
 
 class TVLoss(nn.Module):
     def __init__(self, tv_loss_weight=1):

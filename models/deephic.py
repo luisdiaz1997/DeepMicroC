@@ -73,4 +73,4 @@ class Discriminator(nn.Module):
 
         x = self.conv7(x)
         x = self.avgpool(x)
-        return torch.sigmoid(x.view(batch_size))
+        return x.view(batch_size)
